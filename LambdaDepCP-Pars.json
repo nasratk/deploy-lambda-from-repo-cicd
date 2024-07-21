@@ -1,6 +1,10 @@
 [
     {
-        "ParameterKey": "CodeCommitRepositoryName",
+        "ParameterKey": "GitHubRepositoryOwner",
+        "ParameterValue": "nasratk"
+    },
+    {
+        "ParameterKey": "GitHubRepositoryName",
         "ParameterValue": "lambda-version-finder"
     },
     {
@@ -10,5 +14,9 @@
     {
         "ParameterKey": "CodePipelineBucketName",
         "ParameterValue": "codepipeline-bucket-9876"
+    },
+    {
+        "ParameterKey": "GitHubPersonalAccessToken",
+        "ParameterValue": "/GitHub/PersonalAccessToken"
     }
 ]
