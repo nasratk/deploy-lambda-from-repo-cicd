@@ -41,6 +41,7 @@ Before deploying this CloudFormation stack, ensure you have the following:
 1. An AWS account with the necessary permissions to create the required resources.
 2. An existing GitHub repository containing your Lambda function code.
 3. A GitHub Personal Access Token stored securely in AWS Systems Manager Parameter Store.
+4. An S3 bucket which will be used by CodePipeline to exchange artifacts between various pipeline stages. This template will create a new prefix to be used specifically for this deployment, but the bucket itself should exist prior to running this template.
 
 ## Parameters
 
@@ -68,9 +69,19 @@ The CloudFormation template requires the following parameters:
 2. **Deploy the CloudFormation Stack**:
     - Use the AWS Management Console, AWS CLI, or AWS CloudFormation console to deploy the template.
 
+    If you are using a parameters file to specify your parameters or to override defaults, e.g. LambdaDepCP-Pars.json, then use the following command:
+
     ```sh
     aws cloudformation create-stack --stack-name MyLambdaPipeline \
-      --template-body file://template.yaml \
+      --template-body file://LambdaDepCP.yaml \
+      --parameters file://LambdaDepCP-Pars.json \
+      --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+    ```
+    If you wish to specify parameters in line, use the following command:
+
+    ```sh
+    aws cloudformation create-stack --stack-name MyLambdaPipeline \
+      --template-body file://LambdaDepCP.yaml \
       --parameters ParameterKey=GitHubRepositoryOwner,ParameterValue=YOUR_GITHUB_USER \
                    ParameterKey=GitHubRepositoryName,ParameterValue=YOUR_REPO_NAME \
                    ParameterKey=GitHubBranch,ParameterValue=main \

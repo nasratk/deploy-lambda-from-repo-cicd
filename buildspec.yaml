@@ -1,0 +1,40 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - echo "Installing SAM CLI and chardet..."
+      - sam --version || pip install aws-sam-cli
+      - pip install chardet
+      - echo "Detecting encoding of requirements.txt and converting to UTF-8 if necessary..."
+      - |
+        encoding=$(python -c '
+        import chardet
+        with open("src/requirements.txt", "rb") as f:
+          detected = chardet.detect(f.read())
+          encoding = detected["encoding"]
+        ')
+        echo "Detected encoding: $encoding"
+        if [ "$encoding" != "utf-8" ] && [ -n "$encoding" ]; then
+          iconv -f "$encoding" -t UTF-8 src/requirements.txt -o src/requirements.txt.utf8
+          mv src/requirements.txt.utf8 src/requirements.txt
+        fi
+
+  pre_build:
+    commands:
+      - echo "Running tests... no tests found to run..."
+      # Uncomment the following line if you have tests
+      # - python -m unittest discover tests
+
+  build:
+    commands:
+      - echo "Packaging application..."
+      - aws cloudformation package --template-file template.yaml --s3-bucket $CODEPIPELINE_BUCKET --s3-prefix $S3_PREFIX --output-template-file packaged.yaml
+      - sam build --template packaged.yaml --use-container
+
+artifacts:
+  files:
+    - packaged.yaml
+    - .aws-sam/build/
