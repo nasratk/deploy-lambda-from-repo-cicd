@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CI/CD pipeline for deploying a Lambda function directly from GitHub repository, using AWS CodePipeline, CodeBuild, and AWS SAM
+
+Parameters:
+  GitHubRepositoryOwner:
+    Type: String
+    Description: The GitHub user or organization that owns the repository
+  GitHubRepositoryName:
+    Type: String
+    Description: The name of the GitHub repository
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: The branch of the GitHub repository to use
+  GitHubPersonalAccessToken:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: The name of the SSM parameter storing the GitHub Personal Access Token
+  LambdaFunctionName:
+    Type: String
+    Description: Name of the deployed Lambda function
+  CodePipelineBucketName:
+    Type: String
+    Description: Name of the S3 bucket that will host the CodePipeline artifacts
+
+Resources:
+  # IAM Role for CodeBuild
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "CodeBuildRoleFor${LambdaFunctionName}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # IAM Role for CodePipeline
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "CodePipelineRoleFor${LambdaFunctionName}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - codebuild:*
+                  - lambda:*
+                  - cloudformation:*
+                  - iam:PassRole
+                Resource: "*"
+
+  # IAM Role for CloudFormation
+  CloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "CloudFormationRoleFor${LambdaFunctionName}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudFormationPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                  - ec2:*
+                  - iam:*
+                  - logs:*
+                  - s3:*
+                  - cloudformation:*
+                Resource: "*"
+
+  # CodeBuild Project
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${LambdaFunctionName}CB"
+      Source:
+        Type: CODEPIPELINE
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        EnvironmentVariables:
+          - Name: LAMBDA_FUNCTION_NAME
+            Value: !Ref LambdaFunctionName
+          - Name: CODEPIPELINE_BUCKET
+            Value: !Ref CodePipelineBucketName
+          - Name: S3_PREFIX
+            Value: !Sub "${LambdaFunctionName}CP"
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+
+  # CodePipeline
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${LambdaFunctionName}CP"
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref CodePipelineBucketName
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: 1
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                Owner: !Ref GitHubRepositoryOwner
+                Repo: !Ref GitHubRepositoryName
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubPersonalAccessToken
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Sub "${LambdaFunctionName}Stack"
+                Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                TemplatePath: BuildOutput::packaged.yaml
+                RoleArn: !GetAtt CloudFormationRole.Arn
+
+Outputs:
+  PipelineName:
+    Description: "Name of the CodePipeline pipeline"
+    Value: !Ref CodePipeline
+
+  LambdaFunctionName:
+    Description: "Name of the deployed Lambda function"
+    Value: !Ref LambdaFunctionName
+
+  CodePipelineBucketPrefix:
+    Description: "S3 bucket for storing CodePipeline artifacts"
+    Value: !Sub "${CodePipelineBucketName}/${LambdaFunctionName}CP"

@@ -1,0 +1,14 @@
+[
+    {
+        "ParameterKey": "CodeCommitRepositoryName",
+        "ParameterValue": "lambda-version-finder"
+    },
+    {
+        "ParameterKey": "LambdaFunctionName",
+        "ParameterValue": "LambdaVersionFinder"
+    },
+    {
+        "ParameterKey": "CodePipelineBucketName",
+        "ParameterValue": "codepipeline-bucket-9876"
+    }
+]
